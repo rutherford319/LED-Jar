@@ -3,6 +3,7 @@
 #include <WiFiClient.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
+#include "DHT.h"
 
 #include "LedControl.h"
 
@@ -25,8 +26,26 @@ int randomSpeed = 500;
 int ledPinR = 4;  // the number of the LED R pin - D2
 int ledPinG = 5;  // the number of the LED G pin - D1
 int ledPinB = 16; // the number of the LED B pin - D0
-
 LedControl led(ledPinR, ledPinG, ledPinB, &storage);
+
+int dhtPin = 0;   // the number of the DHT pin - D3
+
+#define DHTTYPE DHT11
+DHT dht(dhtPin, DHTTYPE);
+// Updates DHT readings every 10 seconds
+const long interval = 10000;
+unsigned long previousMillis = 0; // will store last time DHT was updated
+
+// current temperature & humidity, updated in loop()
+float t = 0.0;
+float h = 0.0;
+
+void handleTempAndHumidity()
+{
+  String jsonBody = "{\r\n    \"temp\": " + String(t) + ",\r\n    \"humidity\": " + String(h) + "\r\n}";
+  server.send(200, "application/json", jsonBody);
+}
+
 
 void handleRootMsg(String msg)
 {
@@ -105,7 +124,7 @@ void handleNotFound()
 void setup()
 {
   WiFi.mode(WIFI_STA);
-  WiFi.begin("ENTER-SSID", "ENTER-PASSWORD");
+  WiFi.begin("ssid", "password");
 
   Serial.begin(9600);
   storage = DataStorage();
@@ -115,6 +134,8 @@ void setup()
   server.on("/hex", handleHex);
   server.on("/editRandomSpeed", handleRandomSpeed);
   server.on("/toggleRandom", handleRandomToggle);
+  server.on("/data", handleTempAndHumidity);
+
   server.onNotFound(handleNotFound);
 
   while (WiFi.status() != WL_CONNECTED)
@@ -128,7 +149,39 @@ void setup()
     Serial.println("mDNS responder started");
   }
 
+  
+  Serial.println("Connected!");
+  Serial.println(WiFi.localIP().toString());
+
   server.begin();
+}
+
+void getTemperatureReadings()
+{
+  float newT = dht.readTemperature();
+  if (isnan(newT))
+  {
+    Serial.println("Failed to read from DHT sensor!");
+  }
+  else
+  {
+    t = newT;
+    Serial.println(t);
+  }
+}
+
+void getHumidityReadings()
+{
+  float newH = dht.readHumidity();
+  if (isnan(newH))
+  {
+    Serial.println("Failed to read from DHT sensor!");
+  }
+  else
+  {
+    h = newH;
+    Serial.println(h);
+  }
 }
 
 void loop(void)
@@ -146,5 +199,15 @@ void loop(void)
   else
   {
     delay(200);
+  }
+
+  // Handle temperature/humidity readings
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval)
+  {
+    previousMillis = currentMillis;
+
+    getTemperatureReadings();
+    getHumidityReadings();
   }
 }
